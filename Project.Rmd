@@ -1,0 +1,770 @@
+---
+title: "Red Wine Quality Project"
+author: Leo Tay
+date: 08 February, 2016
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+---
+
+#Introduction:
+Objective of the project is to determine which variables affect the quality of red wines and, if the variables affect each other.
+Dataset consists of 1599 red wines rated from 1 (Very Bad) to 10 (Very Excellent) quality.
+Each red wine has 11 chemical properties/variables.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
+# Load all of the packages that you end up using
+# in your analysis in this code chunk.
+
+# Notice that the parameter "echo" was set to FALSE for this code chunk.
+# This prevents the code from displaying in the knitted HTML output.
+# You should set echo=FALSE for all code chunks in your file.
+library(ggplot2)
+library(GGally)
+library(ggthemes)
+library(scales)
+library(memisc)
+library(dplyr)
+library(gridExtra)
+library(psych)
+library(corrplot)
+#library(plyr)
+#detach("package:plyr", unload = T)
+```
+
+```{r echo=FALSE, Load_the_Data}
+# Load the Data
+rwq <- read.csv("winequalityReds.csv")
+```
+
+# Univariate Plots Section
+```{r echo=FALSE}
+#Set variable x to NULL
+rwq$X <- NULL
+dim(rwq)
+str(rwq)
+```
+
+Dataset consists of approximately 1600 observations with 12 variables.
+
+```{r echo=FALSE}
+summary(rwq)
+```
+
+Summary statistics for the variables in the dataset.
+
+```{r echo=FALSE}
+#Create function for producing histograms
+make_histogram <- function(vname, bwidth){
+  return(ggplot(rwq, aes(x = vname)) + 
+           geom_histogram(color = "black", fill = "lightblue", binwidth = bwidth) +
+           ylab("Count/Frequency"))
+}
+
+#Create function for producing scatterplots
+make_scatter <- function(xvarname){
+  return(ggplot(rwq, aes(x = xvarname, y = quality)) +
+           geom_jitter(alpha = 0.5, color = "orange") +
+           ylab("Quality (Score between 1 to 10, Very Bad to Very Excellent)"))
+}
+
+#Create function for producing boxplots
+make_box <- function(yvarname){
+  return(ggplot(rwq, aes(x = quality_cat, y = yvarname)) +
+           geom_boxplot() +
+           stat_summary(fun.y = mean, geom = 'point', shape = 5) + 
+           xlab("Quality (Score between 1 to 10, Very Bad to Very Excellent)"))
+}
+```
+
+```{r echo=FALSE}
+#Create plot for main variable Quality
+make_histogram(rwq$quality, 1) +
+  ggtitle("Histogram of Quality") + 
+  xlab("Quality (Score between 1 to 10, Very Bad to Very Excellent)") + 
+  scale_x_continuous(breaks = seq(1, 10, 1), limits = c(1, 10)) +
+  scale_y_continuous(breaks = seq(0, 700, 100), limits = c(0, 700))
+```
+
+From the histogram, we can see that there are no ratings from 1 to 2 and 9 to 10, suggesting that while no wines were really bad, none were really good too (Subjective evaluation of quality).
+Based on the above, we can assume that the better/best quality range is 7 to 8.
+
+#Histograms of remaining variables
+Create histograms of remaining variables to find out if there are any interesting results.
+
+```{r echo=FALSE, fig.height=8, fig.width=8}
+#Histogram Fixed Acidity
+make_histogram(rwq$fixed.acidity, 0.1) +
+  ggtitle("Histogram of Fixed Acidity") + 
+  xlab("Fixed Acidity (Tartaric Acid - g / dm^3)") + 
+  scale_x_continuous(breaks = seq(4, 16, 1), limits = c(4, 16)) +
+  scale_y_continuous(breaks = seq(0, 70, 5), limits = c(0, 70))
+```
+
+Histogram seems to be near normal distribution.
+Some outliers were noticed but as they are located near the remaining data, they will be included.
+Certain values have 0 counts suggesting that they had no effects or less likely, the red wines did not have those values.
+
+```{r echo=FALSE}
+#Histogram Volatile Acidity
+make_histogram(rwq$volatile.acidity, 0.001) +
+  ggtitle("Histogram of Volatile Acidity")  +
+  xlab("Volatile Acidity (Acetic Acid - g / dm^3)") +
+  scale_x_continuous(breaks = seq(0.1, 1.6, 0.1), limits = c(0.1, 1.6)) +
+  scale_y_continuous(breaks = seq(0, 50, 5), limits = c(0, 50))
+```
+
+Histogram contained far-right outlier, will try transformaing it.
+
+```{r echo=FALSE, warning=FALSE}
+#Histogram Volatile Acidity
+make_histogram(rwq$volatile.acidity, 0.001) +
+  ggtitle("Histogram 95% Quantile of Volatile Acidity") +
+  xlab("Volatile Acidity (Acetic Acid - g / dm^3)") + 
+  scale_x_continuous(breaks = seq(0, 0.9, 0.1), limits = c(0.1, quantile(rwq$volatile.acidity, .95))) +
+  scale_y_continuous(breaks = seq(0, 50, 5), limits = c(0, 50))
+```
+
+I decided to avoid using Log10 transformations as based on calculations, there are negative values instead, I opted to retain 95% quantile of the data.
+From it, the histogram seems to be near bi-modal with some values having 0 counts.
+(I had also encountered some issues while transforming using Log10 which I will elborate further in the reflections section.)
+
+```{r echo=FALSE}
+#Histogram Citric Acid
+make_histogram(rwq$citric.acid, 0.01) +
+  ggtitle("Histogram of Citric Acid") +
+  xlab("Citric Acid (g / dm^3)") + 
+  scale_y_continuous(breaks = seq(0, 140, 5), limits = c(0, 140))
+```
+
+Observed far-right outlier in histogram however, it does not seem to affect the distribution.
+Allowing outlier to remain.
+Distribution appears to be skewed to the left with 2 other peaks at 0.24 and 0.49 however with value 0 having the most count at 132 which is near 10% of the red wines, the impact of citric acid on quality might be negligible.
+
+```{r echo=FALSE}
+#Histogram Residual Sugar
+make_histogram(rwq$residual.sugar, 0.01) +
+  ggtitle("Histogram of Residual Sugar") +
+  xlab("Residual Sugar (g / dm^3)") + 
+  scale_x_continuous(breaks = seq(0.5, 16, 1), limits = c(0.5, 16)) +
+  scale_y_continuous(breaks = seq(0, 160, 10), limits = c(0, 160))
+```
+
+Multiple far-right outliers were observed and the histogram was difficult to read, will try to transform it.
+
+```{r echo=FALSE}
+#Histogram Residual Sugar
+make_histogram(rwq$residual.sugar, 0.01) +
+  ggtitle("Histogram Log10 of Residual Sugar") +
+  xlab("Residual Sugar (g / dm^3)") + 
+  scale_x_log10(breaks = seq(0.5, 16, 1), limits = c(0.5, 16)) +
+  scale_y_continuous(breaks = seq(0, 160, 10), limits = c(0, 160))
+```
+
+Log transformation of historgram seems similar to the above and is in a normal distribution.
+Majority of the data seems to end around residual sugar 9.0.
+There are still outliers but they do not appear to affect the distribution.
+
+```{r echo=FALSE, warning=FALSE}
+#Histogram Residual Sugar
+make_histogram(rwq$residual.sugar, 0.01) +
+  ggtitle("Histogram 95% Quantile of Residual Sugar") +
+  xlab("Residual Sugar (g / dm^3)") + 
+  scale_x_continuous(breaks = seq(0.8, 5, 1), limits = c(0.8, quantile(rwq$residual.sugar, .95))) +
+  scale_y_continuous(breaks = seq(0, 160, 10), limits = c(0, 160))
+```
+
+As the two histograms does not seem to be discernable, I decided to retain 95% quantile of the data to filter the outliers.
+Histogram is similar to a normal distribution with some trailing data on the right.
+I find it strange that the counts are low at certain residual sugar values such as 1.65, 1.75,2.05 in addition to others.
+Residual sugar value 2.00 has the highest count of all variables at 156. Being the most common value, I wonder if this will affect the quality.
+
+```{r echo=FALSE}
+#Histogram Chlorides
+make_histogram(rwq$chlorides, 0.001) +
+  ggtitle("Histogram of Chlorides") +
+  scale_x_continuous(breaks = seq(0, 0.615, 0.1), limits = c(0, 0.615)) + 
+  scale_y_continuous(breaks = seq(0, 70, 5), limits = c(0, 70)) +
+  xlab("Chlorides(Sodium Chloride - g / dm^3)")
+```
+
+Far-right outliers were observed in the histogram.
+Plot is also clustered, making it hard to read.
+
+```{r echo=FALSE, warning=FALSE}
+#Histogram Chlorides
+make_histogram(rwq$chlorides, 0.001) +
+  ggtitle("Histogram 95% Quantile of Chlorides") +
+  scale_x_continuous(breaks = seq(0, 0.13, 0.01), limits = c(0, quantile(rwq$chlorides, .95))) + 
+  scale_y_continuous(breaks = seq(0, 70, 5), limits = c(0, 70)) +
+  xlab("Chlorides(Sodium Chloride - g / dm^3)")
+```
+
+Histogram appears to be in near normal distribution.
+I wonder why there is a gap between the first count at value 0.012 to 0.034.
+Perhaps no red wines were created at those values.
+
+```{r echo=FALSE}
+#Histogram Free Sulfur Dioxide
+make_histogram(rwq$free.sulfur.dioxide, 1) +
+  ggtitle("Histogram of Free Sulfur Dioxide")  +
+  xlab("Free Sulfur Dioxide (mg / dm^3)") + 
+  scale_x_continuous(breaks = seq(0, 75, 5), limits = c(0, 75)) +
+  scale_y_continuous(breaks = seq(0, 140, 5), limits = c(0, 140))
+```
+
+Histogram is skewed to the left with far-right outliers.
+In general, the count seems to decrease as the value of free sulfur dioxide increases.
+
+```{r echo=FALSE}
+#Histogram Total Sulfur Dioxide
+make_histogram(rwq$total.sulfur.dioxide, 1) +
+  ggtitle("Histogram of Total Sulfur Dioxide")  +
+  xlab("Total Sulfur Dioxide (mg / dm^3)") + 
+  scale_x_continuous(breaks = seq(0, 290, 20), limits = c(0, 290)) +
+  scale_y_continuous(breaks = seq(0, 45, 5), limits = c(0, 45))
+```
+
+Far-right outliers were observed for the total sulfur dioxide histogram.
+
+```{r echo=FALSE}
+#Histogram Total Sulfur Dioxide
+make_histogram(rwq$total.sulfur.dioxide, 0.01) +
+  ggtitle("Histogram Log10 of Total Sulfur Dioxide")  +
+  xlab("Total Sulfur Dioxide (mg / dm^3)") + 
+  scale_x_log10() +
+  scale_y_continuous(breaks = seq(0, 45, 5), limits = c(0, 45))
+```
+
+Performing a log10 scale on total sulfur dioxide, the historgram seems to be near a rounded normal distribution.
+It appears that values prior to 50 contained more 0 counts.
+
+```{r echo=FALSE}
+#Histogram Density
+make_histogram(rwq$density, 0.0001) +
+  ggtitle("Histogram of Density")  +
+  xlab("Total Density (g / cm^3)") + 
+  scale_x_continuous(breaks = seq(0.99, 1.004, 0.001), limits = c(0.99, 1.004)) +
+  scale_y_continuous(breaks = seq(0, 60, 5), limits = c(0, 60))
+```
+
+Histogram seems to be similar to a normal distribution and as density increases, there seems to be a general decrease in count.
+
+```{r echo=FALSE}
+#Histogram pH
+make_histogram(rwq$pH, 0.01) +
+  ggtitle("Histogram of pH") +
+  xlab("Total pH") + 
+  scale_x_continuous(breaks = seq(2.4, 4.1, 0.1), limits = c(2.4, 4.1)) +
+  scale_y_continuous(breaks = seq(0, 60, 5), limits = c(0, 60))
+```
+
+Histogram seems to be similar to a normal distribution.
+There are 0 counts where pH is 2.96, 2.97, 3.64 and, 3.65.
+This suggests that the four pH values might not be suitable for creating red wines.
+
+```{r echo=FALSE}
+#Histogram Sulphates
+make_histogram(rwq$sulphates, 0.01) +
+  ggtitle("Histogram of Sulphates") +
+  xlab("Total Sulphates (Potassium Sulphate - g / dm3)") + 
+  scale_x_continuous(breaks = seq(0.3, 2, 0.1), limits = c(0.3, 2)) +
+  scale_y_continuous(breaks = seq(0, 70, 5), limits = c(0, 70))
+```
+
+Histogram seems to be near normal distribution trailing to the right with far-right outliers.
+Outliers are retained as they did not affect the readability of the histogram.
+0 count was noted where sulphates is at 0.41.
+
+```{r echo=FALSE}
+#Histogram Alcohol
+make_histogram(rwq$alcohol, 0.1) +
+  ggtitle("Histogram of Alcohol") +
+  xlab("Total Alcohol (% by volume)") + 
+  scale_x_continuous(breaks = seq(8, 15, 1), limits = c(8, 15)) +
+  scale_y_continuous(breaks = seq(0, 150, 10), limits = c(0, 150))
+```
+
+Histogram seems to be skewed towards to left and in general, count seems to drop as alcohol increases.
+
+###Summary
+
+From the overview histograms, the most common count for the variables are:
+
+* Residual Sugar        @ 2.00      : 156
+* Alcohol               @ 9.500000  : 139
+* Free Sulfur Dioxide   @ 6.0       : 138
+* Citric Acid           @ 0.00      : 132
+* Sulphates             @ 0.60      : 69
+* Fixed Acidity         @ 7.2       : 67
+* Chlorides             @ 0.080     : 66
+* pH                    @ 3.30      : 57
+* Volatile Acidity      @ 0.600     : 47
+* Total Sulfur Dioxide  @ 28.0      : 43
+* Density               @ 0.99720   : 36
+
+It will be interesting to see how they affect quality (If any).
+
+# Univariate Analysis
+
+### What is the structure of your dataset?
+Total of 1599 red wines are in the dataset with 13 variables (Fixed Acidity, Volatile Acidity, Citric Acid, Residual Sugar, Chlorides, Free Sulfur Dioxide, Total Sulfur Dioxide, Density, pH, Sulphates, Alcohol, X and, quality)
+X is used to identity each red wine while quality is used to indicate how good/bad the wine is.
+
+No categorical variables were noticed in the dataset.
+
+Other Observations:
+
+* Outliers were noticed in all variables
+* Median red wine quality is 6 and the highest is 8
+* Variable Density has the lowest peak count of 36 at value 0.99720
+
+### What is/are the main feature(s) of interest in your dataset?
+Main features are quality and Residual Sugar. Main goal is to determine what affects the quality of red wines.
+As Residual Sugar has the highest occurence among the wines, it seems logical that it in combination with other variables affect the quality.
+
+### What other features in the dataset do you think will help support your investigation into your feature(s) of interest?
+Based on my understanding, it seems that all the variables in the dataset affect the quality to some degree, be it taste, smell, health benefits or each other.
+
+### Did you create any new variables from existing variables in the dataset?
+No new variables were created as it will be hard to aggregate them into a total score of the variables.
+
+### Of the features you investigated, were there any unusual distributions? Did you perform any operations on the data to tidy, adjust, or change the form of the data? If so, why did you do this?
+Majority of the variables were in near-normal distributions.
+Volatile Acidity seemed to be in a bi-modal distribution.
+Outliers were observed for all variables.
+
+# Bivariate Plots Section
+```{r echo=FALSE, Bivariate_Plots}
+#Correlation matrix and plot
+cor(rwq)
+```
+```{r echo=FALSE, fig.width=8, fig.height=8}
+corrplot(cor(rwq), method = "number")
+```
+
+From the above correlation table and plot matrix, we can see that quality has positive relations with:
+
+* Alcohol:        0.48
+* Sulphates:      0.25
+* Citric Acid:    0.23
+* Fixed Acidity:  0.12
+* Residual Sugar: 0.01
+
+It's worth looking further at how the above variables affect quality.
+
+```{r echo=FALSE}
+#Convert quality values into factors/categorical data
+rwq$quality_cat <- as.factor(rwq$quality)
+```
+
+```{r echo=FALSE, fig.height=6, fig.width=8}
+#Scatterplot Quality vs Alcohol
+make_scatter(rwq$alcohol) +
+  ggtitle("Scatterplot of Quality vs Alcohol") + 
+  xlab("Alcohol (% by volume)") +
+  scale_x_continuous(breaks = seq(8, 15, 1), limits = c(8, 15)) +
+  scale_y_continuous(breaks = seq(1, 10, 1), limits = c(1, 10))
+```
+
+```{r echo=FALSE, fig.height=6, fig.width=8}
+#Boxplot Alcohol vs Quality
+make_box(rwq$alcohol) + 
+  ggtitle("Boxplot of Alcohol vs Quality") + 
+  ylab("Alcohol (% by volume)") +
+  scale_y_continuous(breaks = seq(8, 15, 1), limits = c(8, 15))
+```
+
+Quality vs Alcohol:
+There seems to be a relationship where increasing alcohol increases quality also however, effect seems to stop around where alcohol is 14.
+The increase in quality also seems to be limited as most red wines are located between quality 5 to 6.
+Quality 8 was first captured where alcohol is 9.8 and ended at 14.
+
+```{r echo=FALSE}
+#Summary statistics Alcohol vs Quality
+alcohol_quality  <- rwq %>%
+  group_by(alcohol) %>%
+  summarise(quality_mean = mean(quality),
+            quality_median = median(quality),
+            quality_max = max(quality),
+            n = n()) %>%
+  arrange(alcohol)
+
+arrange(alcohol_quality, desc(quality_max))
+by(rwq$alcohol, rwq$quality, summary)
+```
+
+To achieve quality 8 red wines, the average alcohol % should be 12.09.
+
+```{r echo=FALSE, fig.height=6, fig.width=8}
+#Scatterplot Quality vs Sulphates
+make_scatter(rwq$sulphates) +
+  ggtitle("Scatterplot of Quality vs Sulphates") + 
+  xlab("Sulphates (Potassium Sulphate - g / dm3)") +
+  scale_x_continuous(breaks = seq(0, 2.1, 0.1), limits = c(0, 2.1)) +
+  scale_y_continuous(breaks = seq(1, 10, 1), limits = c(1, 10))
+```
+
+```{r echo=FALSE, fig.height=6, fig.width=8}
+#Boxplot Sulphates vs Quality
+make_box(rwq$sulphates) + 
+  ggtitle("Boxplot of Sulphates vs Quality") + 
+  ylab("Sulphates (Potassium Sulphate - g / dm3)") + 
+  scale_y_continuous(breaks = seq(0, 2, 0.1), limits = c(0, 2))
+```
+
+Quality vs Sulphates:
+Similar to alcohol, increasing the amount sulphates also increases quality but the effect drops beyond 1.0 sulphates.
+However, majority of the quality also falls between 5 to 6.
+Quality of 8 was first captured where sulphates is 0.63 and stopped at 1.10.
+
+```{r echo=FALSE}
+#Summary statistics Sulphates vs Quality
+sulphates_quality  <- rwq %>%
+  group_by(sulphates) %>%
+  summarise(quality_mean = mean(quality),
+            quality_median = median(quality),
+            quality_max = max(quality),
+            n = n()) %>%
+  arrange(sulphates)
+
+arrange(sulphates_quality, desc(quality_max))
+by(rwq$sulphates, rwq$quality, summary)
+```
+
+To achieve quality 8 red wines, the average sulphates level should be 0.7678.
+
+```{r echo=FALSE, fig.height=6, fig.width=8}
+#Scatterplot Quality vs Citric Acid
+make_scatter(rwq$citric.acid) +
+  ggtitle("Scatterplot of Quality vs Citric Acid") + 
+  xlab("Citric Acid (g / dm^3)") +
+  ylab("Quality (Score between 1 to 10, Very Bad to Very Excellent)") +
+  scale_y_continuous(breaks = seq(1, 10, 1), limits = c(1, 10))
+```
+
+```{r echo=FALSE, fig.height=6, fig.width=8}
+#Boxplot Citric Acid vs Quality
+make_box(rwq$citric.acid) + 
+  ggtitle("Boxplot of Citric Acid vs Quality") + 
+  ylab("Citric Acid (g / dm^3)") + 
+  scale_y_continuous(breaks = seq(0, 1, 0.1), limits = c(0, 1))
+```
+
+Quality vs Citric Acid:
+Relationship seems to be minor as citric acid value 0.00 has also been captured on better qualities. 
+Quality of 8 was captured from citirc acid is 0.03 to 0.72.
+
+```{r echo=FALSE}
+#Summary statistics Citric Acid vs Quality
+citric_acid_quality  <- rwq %>%
+  group_by(citric.acid) %>%
+  summarise(quality_mean = mean(quality),
+            quality_median = median(quality),
+            quality_max = max(quality),
+            n = n()) %>%
+  arrange(citric.acid)
+
+arrange(citric_acid_quality, desc(quality_max))
+by(rwq$citric.acid, rwq$quality, summary)
+```
+
+To achieve quality 8 red wines, the average citric acid level should be 0.3911.
+
+```{r echo=FALSE, fig.height=6, fig.width=8}
+#Scatterplot Quality vs Fixed Acidity
+make_scatter(rwq$fixed.acidity) +
+  ggtitle("Scatterplot of Quality vs Fixed Acidity") + 
+  xlab("Fixed Acidity (Tartaric Acid - g / dm^3)") +
+  ylab("Quality (Score between 1 to 10, Very Bad to Very Excellent)") +
+  scale_x_continuous(breaks = seq(4, 16, 1), limits = c(4, 16)) +
+  scale_y_continuous(breaks = seq(1, 10, 1), limits = c(1, 10))
+```
+
+```{r echo=FALSE, fig.height=6, fig.width=8}
+#Boxplot Fixed Acidity vs Quality
+make_box(rwq$fixed.acidity) + 
+  ggtitle("Boxplot of Fixed Acidity vs Quality") + 
+  ylab("Fixed Acidity (Tartaric Acid - g / dm^3)") + 
+  scale_y_continuous(breaks = seq(4, 16, 1), limits = c(4, 16))
+```
+
+Quality vs Fixed Acidity:
+While quality 8 has been captured on certain fixed acidity values, the results are too spread out to say that increasing fixed acidity increases quality.
+Quality 8 was from fixed acidity is 5 to 12.6.
+
+```{r echo=FALSE}
+#Summary statistics Fixed Acidity vs Quality
+fixed_acidity_quality  <- rwq %>%
+  group_by(fixed.acidity) %>%
+  summarise(quality_mean = mean(quality),
+            quality_median = median(quality),
+            quality_max = max(quality),
+            n = n()) %>%
+  arrange(fixed.acidity)
+
+arrange(fixed_acidity_quality, desc(quality_max))
+by(rwq$fixed.acidity, rwq$quality, summary)
+```
+
+To achieve quality 8 red wines, the average fixed acidity level should be 8.567.
+
+```{r echo=FALSE, fig.height=6, fig.width=8}
+#Boxplot of  Quality vs Residual Sugar
+ggplot(rwq, aes(rwq$quality_cat, rwq$residual.sugar)) + 
+  geom_boxplot() + 
+  ggtitle("Scatterplot of Quality vs Residual Sugar") + 
+  xlab("Quality (Score between 1 to 10, Very Bad to Very Excellent)") +
+  ylab("Residual Sugar (g / dm^3)") +
+  stat_summary(fun.y = mean, geom = 'point', shape = 5) +
+  scale_y_continuous(breaks = seq(0, 16, 1), limits = c(0, 16))
+```
+
+```{r echo=FALSE, fig.height=6, fig.width=8}
+#Boxplot Residual Sugar vs Quality
+make_box(rwq$residual.sugar) + 
+  ggtitle("Boxplot of Residual Sugar vs Quality") + 
+  ylab("Residual Sugar (g / dm^3)") + 
+  scale_y_continuous(breaks =  seq(0, 16, 1), limits = c(0, 16))
+```
+
+Quality vs Residual Sugar:
+No meaningful relationships were observed.
+Quality stopped increasing beyond residual sugar is 6.40.
+Quality 8 was captured from residual sugar is 1.40 to 6.40.
+
+```{r echo=FALSE}
+#Summary Residual Sugar vs Quality
+residual_sugar_quality  <- rwq %>%
+  group_by(residual.sugar) %>%
+  summarise(quality_mean = mean(quality),
+            quality_median = median(quality),
+            quality_max = max(quality),
+            n = n()) %>%
+  arrange(residual.sugar)
+
+arrange(residual_sugar_quality, desc(quality_max))
+by(rwq$residual.sugar, rwq$quality, summary)
+```
+
+To achieve quality 8 red wines, the average residual sugar level should be 2.578.
+
+```{r echo=FALSE, fig.height=6, fig.width=8}
+#Scatterplot Alcohol vs Citric Acid
+ggplot(rwq, aes(x = citric.acid, y = alcohol)) +
+  geom_jitter(alpha = 0.5, color = "orange") + 
+  ggtitle("Alcohol vs Citric Acid")
+```
+
+No visible increase in alcohol could be seen by increasing citric acid.
+
+# Bivariate Analysis
+
+### Talk about some of the relationships you observed in this part of the investigation. How did the feature(s) of interest vary with other features in the dataset?
+Alcohol has moderate correlation with quality while Sulphates, Citric Acid, Fixed Acidity and, Residual Sugar has low correlations.
+
+Being the highest correlation observed, I was expecting the Quality vs Alcohol relationship where increasing alcohol increases quality to be more prominent.
+From the scatterplot, the increase was not as expected with alcohol values appearing on different quality values however, it was only between alcohol 9.8 to 14 that quality 8 started to appear more frequently.
+
+For Sulpahtes, a similar pattern was observed where increasing between 0.63 to 1.10 results in quality of 8.
+
+For Citric Acid, Fixed Acidity and Residual Sugar, quality 8 have been captured across their respective scales hence, increasing them should not result in higher quality values.
+
+Throughout comparing Quality with Sulphates, Citric Acid, Fixed Acidity and, Residual Sugar, the majority of quality was found to be between 5 to 6.
+
+### Did you observe any interesting relationships between the other features (not the main feature(s) of interest)?
+Alcohol seems to have a relationship with Citric Acid however after creating the scatterplot, increasing citric acid does not seem to increase alcohol.
+
+### What was the strongest relationship you found?
+Strongest relationship would still be Alcohol vs Quality.
+The plot has shown that while better quality wines have appeared with lower alcohol values, it is only when increasing alcohol that we see more wines with better quality.
+
+
+# Multivariate Plots Section
+
+```{r echo=FALSE, Multivariate_Plots, fig.height=6, fig.width=8}
+#Scatterplot Quality vs Alcohol, colored by Citric Acid
+ggplot(rwq, aes(x = alcohol, y = quality, color = citric.acid)) + 
+  geom_jitter(alpha = 0.5, size = 1) + 
+  scale_x_continuous(breaks = seq(8, 15, 1), limits = c(8, 15)) + 
+  ggtitle("Quality vs Alcohol, Color = Citric Acid") + 
+  xlab("Alcohol (% by volume)") + 
+  ylab("Quality (Score between 1 to 10, Very Bad to Very Excellent)")
+```
+
+From the plot, it seems that for quality to be 8. alcohol should be between 9.8 to 14 and citric acid should be between 0.4 to 1.00 mainly.
+
+```{r echo=FALSE, fig.height=6, fig.width=8}
+#Scatterplot Quality vs Alcohol, colored by Sulphates
+ggplot(rwq, aes(x = alcohol, y = quality, color = sulphates)) +
+  geom_jitter(alpha = 0.5, size = 1) +
+  scale_x_continuous(breaks = seq(8, 15, 1), limits = c(8, 15)) + 
+  ggtitle("Quality vs Alcohol, Color = Sulphates") + 
+  xlab("Alcohol (% by volume)") + 
+  ylab("Quality (Score between 1 to 10, Very Bad to Very Excellent)")
+```
+
+From the plot, it seems that for quality to be 8. alcohol should be between 9.7 to 13.4 and sulphates should be between 0.5 to 1.0 mainly.
+
+```{r echo=FALSE, fig.height=6, fig.width=8}
+#Scatterplot Quality vs Alcohol, colored by Fixed Acidity
+ggplot(rwq, aes(x = alcohol, y = quality, color = fixed.acidity)) +
+  geom_jitter(alpha = 0.5, size = 1) +
+  scale_x_continuous(breaks = seq(8, 15, 1), limits = c(8, 15)) + 
+  ggtitle("Quality vs Alcohol, Color = Fixed Acidity") + 
+  xlab("Alcohol (% by volume)") + 
+  ylab("Quality (Score between 1 to 10, Very Bad to Very Excellent)")
+```
+
+From the plot, it seems that for quality to be 8. alcohol should be between 9.7 to 13.4 and fixed acidity should be between 6.0 to 10.0 mainly.
+
+```{r echo=FALSE, fig.height=6, fig.width=8}
+#Scatterplot Quality vs Alcohol, colored by Residual Sugar
+ggplot(rwq, aes(x = alcohol, y = quality, color = residual.sugar)) +
+  geom_jitter(alpha = 0.5, size = 1) +
+  scale_x_continuous(breaks = seq(8, 15, 1), limits = c(8, 15)) + 
+  ggtitle("Quality vs Alcohol, Color = Fixed Acidity") + 
+  xlab("Alcohol (% by volume)") + 
+  ylab("Quality (Score between 1 to 10, Very Bad to Very Excellent)")
+```
+
+From the plot, it seems that for quality to be 8. alcohol should be between 9.7 to 13.4 and residual sugar should be between 1 to 5 mainly.
+
+# Multivariate Analysis
+
+### Talk about some of the relationships you observed in this part of the investigation. Were there features that strengthened each other in terms of looking at your feature(s) of interest?
+Based on the data and plots, it seems that to maintain a red wine quality of 8, the below variables will need to be at:
+
+* Residual Sugar: 1.40 to 6.40
+* Fixed Acidity:  5 to 12.6
+* Sulphates:      0.63 to 1.10
+* Citric Acid:    0.03 to 0.72
+* Alcohol:        9.8 to 14.0
+
+There seems to be a range for the variables where they are able to affect the red wines' quality to 8.
+Adding additional amounts does not affect it further.
+
+Besides the variable ranges, the below average values should also result in quality 8 red wines:
+
+* Average Residual Sugar level: 2.578
+* Average Fixed Acidity Level:  8.567
+* Average Sulphates Level:      0.7678
+* Average Citric Acid Level:    0.3911
+* Average Alcohol %:            12.09
+
+However as quality is a subjective evaluation (Based on personal preference), it will be hard to say for certain that increasing certain variables will increase quality.
+
+### Were there any interesting or surprising interactions between features?
+The range which the variables affect quality varies widely, supporting the notion that there is no standard measure of quality and it is based purely on the taste of the person evaluating them.
+
+### OPTIONAL: Did you create any models with your dataset? Discuss the strengths and limitations of your model.
+No models were created as quality is based on personal opinion hence, it would be hard to produce a prediction that increasing x will definitely increase quality.
+
+# Final Plots and Summary
+
+### Plot One
+```{r echo=FALSE, Plot_One}
+#Create plot for main variable Quality
+make_histogram(rwq$quality, 1) +
+  ggtitle("Histogram of Quality") + 
+  xlab("Quality (Score between 1 to 10, Very Bad to Very Excellent)") + 
+  scale_x_continuous(breaks = seq(1, 10, 1), limits = c(1, 10)) +
+  scale_y_continuous(breaks = seq(0, 700, 100), limits = c(0, 700))
+```
+
+### Description One
+Distribution of quality appears to be near normal with most deciding on 5 and 6. As the graders were expers, we can assume that majority of the red wines are ok/average however, it is important to take note that the gradings are of personal perference.
+
+### Plot Two
+```{r echo=FALSE, Plot_Two, fig.height=6, fig.width=8}
+#Scatterplot Quality vs Alcohol
+make_scatter(rwq$alcohol) +
+  ggtitle("Quality vs Alcohol") + 
+  xlab("Alcohol (% by volume)") +
+  scale_x_continuous(breaks = seq(8, 15, 1), limits = c(8, 15)) +
+  scale_y_continuous(breaks = seq(1, 10, 1), limits = c(1, 10))
+```
+
+### Description Two
+Being an alcoholic beverage, red wines seems to depend on alcohol (And other properties) to determine its quality.
+Initially, quality was between 5 to 7. 
+8 first appeared when alcohol value was 9.8 and continued until alcohol value was 14.
+
+This suggests that if based purely on alcohol values, keeping the range from 9.8 to 14 has a higher possibility of generating higher quality red wines.
+
+### Plot Three
+```{r echo=FALSE, Plot_Three, fig.height=10, fig.width=12}
+#Scatterplot Quality vs Alcohol, colored by Citric Acid
+p1 <-ggplot(rwq, aes(x = alcohol, y = quality, color = citric.acid)) + 
+  geom_jitter(alpha = 0.5, size = 1) +
+  scale_x_continuous(breaks = seq(8, 15, 1), limits = c(8, 15)) + 
+  ggtitle("Quality vs Alcohol, Color = Citric Acid") + 
+  xlab("Alcohol (% by volume)") + 
+  ylab("Quality (Score between 1 to 10, Very Bad to Very Excellent)")
+
+#Scatterplot Quality vs Alcohol, colored by Sulphates
+p2 <- ggplot(rwq, aes(x = alcohol, y = quality, color = sulphates)) +
+  geom_jitter(alpha = 0.5, size = 1) +
+  scale_x_continuous(breaks = seq(8, 15, 1), limits = c(8, 15)) + 
+  ggtitle("Quality vs Alcohol, Color = Sulphates") + 
+  xlab("Alcohol (% by volume)") + 
+  ylab("Quality (Score between 1 to 10, Very Bad to Very Excellent)")
+
+#Scatterplot Quality vs Alcohol, colored by Fixed Acidity
+p3 <- ggplot(rwq, aes(x = alcohol, y = quality, color = fixed.acidity)) +
+  geom_jitter(alpha = 0.5, size = 1) +
+  scale_x_continuous(breaks = seq(8, 15, 1), limits = c(8, 15)) + 
+  ggtitle("Quality vs Alcohol, Color = Fixed Acidity") + 
+  xlab("Alcohol (% by volume)") + 
+  ylab("Quality (Score between 1 to 10, Very Bad to Very Excellent)")
+
+#Scatterplot Quality vs Alcohol, colored by Residual Sugar
+p4 <- ggplot(rwq, aes(x = alcohol, y = quality, color = residual.sugar)) +
+  geom_jitter(alpha = 0.5, size = 1) +
+  scale_x_continuous(breaks = seq(8, 15, 1), limits = c(8, 15)) + 
+  ggtitle("Quality vs Alcohol, Color = Fixed Acidity") + 
+  xlab("Alcohol (% by volume)") + 
+  ylab("Quality (Score between 1 to 10, Very Bad to Very Excellent)")
+
+grid.arrange(p1, p2, p3, p4, ncol = 2)
+```
+
+### Description Three
+Using alcohol as the main variable, the remaining correlated variables were added to the plots as color scales to determine their effects.
+From there, it appears that the variables need to be in a certain range in addition to alcohol to result in quality 8 red wines.
+
+Ranges are:
+
+* Alcohol:        9.8 to 14
+* Sulphates:      0.63 to 1.10
+* Citric Acid:    0.03 to 0.72
+* Fixed Acidity:  5 to 12.6
+* Residual Sugar: 1.4 to 6.40
+
+# Reflection
+Dataset contained information about 1599 red wines across 12 variables.
+
+I started by plotting histograms of all the variables to get a feel of how the data looked like.
+Initially, I thought that residual sugar would have the most impact on quality as it had the highest count of 156 at 2.0 meaning that it is present in around 10% of the red wines.
+
+However after plotting out and subsetting the data, it was clear that this was not the case as the counts were mainly for quality 5 and 6.
+
+Next, I plotted the correlation matrix and table.
+They showed that quality had relationships with alcohol (~0.48), sulphates (~0.26), citric acid (~0.23), fixed acidity (~0.12) and residual sugar (~0.01).
+After plotting scatterplots of quality against each of the variables above, it was observed that alcohol has the best relationship though limited and it was selected as the primary attribute.
+
+Summary statistics of quality vs the other correlated variables were created and from there, the mean variable values were determined.
+
+Lastly, I moved to creating scatterplots of quality vs alcohol and using the other variables to color-code the points.
+Based on the color, a range of the varibles creating quality 8 was noted.
+
+Limitations/Difficulties:
+
+* While transforming the axis using Log10, I noticed that the scale does not seem to fit properly. In the "Historgram Log10 of Residual Sugar" plot, the x-axis does not seem to scale equally
+* Scale Log10 values seem different from calculation. While transforming the "Histogram of Total Sulfur Dioxide", scale_log10 values showed more than 100 but using "rwq$log10_tsd <- log10(rwq$total.sulfur.dioxide)", the maximum value was only around 2.460898
+* Creating a prediction for quality was hard as it was evaluated/determined by humans where results may not be same if measured again
+* I was unable to include the remaining variables in the analysis in any meaning manner
+* Lack of a strong variable correlation with quality made the analysis much harder
+* Unable to create a new variable from existing ones (For example, using x, y and z from diamonds to form volume) as such relationships does not seem to exist in the dataset
